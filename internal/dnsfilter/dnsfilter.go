@@ -1,3 +1,4 @@
+// Package dnsfilter implements a DNS filter.
 package dnsfilter
 
 import (
@@ -199,7 +200,7 @@ func (d *Dnsfilter) WriteDiskConfig(c *Config) {
 // SetFilters - set new filters (synchronously or asynchronously)
 // When filters are set asynchronously, the old filters continue working until the new filters are ready.
 //  In this case the caller must ensure that the old filter files are intact.
-func (d *Dnsfilter) SetFilters(blockFilters []Filter, allowFilters []Filter, async bool) error {
+func (d *Dnsfilter) SetFilters(blockFilters, allowFilters []Filter, async bool) error {
 	if async {
 		params := filtersInitializerParams{
 			allowFilters: allowFilters,
@@ -281,7 +282,7 @@ type Result struct {
 	CanonName string `json:",omitempty"` // CNAME value
 
 	// for RewriteEtcHosts:
-	ReverseHost string `json:",omitempty"`
+	ReverseHosts []string `json:",omitempty"`
 
 	// for ReasonRewrite & RewriteEtcHosts:
 	IPList []net.IP `json:",omitempty"` // list of IP addresses
@@ -325,18 +326,9 @@ func (d *Dnsfilter) CheckHost(host string, qtype uint16, setts *RequestFiltering
 	// Now check the hosts file -- do we have any rules for it?
 	// just like DNS rewrites, it has higher priority than filtering rules.
 	if d.Config.AutoHosts != nil {
-		ips := d.Config.AutoHosts.Process(host, qtype)
-		if ips != nil {
-			result.Reason = RewriteEtcHosts
-			result.IPList = ips
-			return result, nil
-		}
-
-		revHost := d.Config.AutoHosts.ProcessReverse(host, qtype)
-		if len(revHost) != 0 {
-			result.Reason = RewriteEtcHosts
-			result.ReverseHost = revHost + "."
-			return result, nil
+		matched, err := d.checkAutoHosts(host, qtype, &result)
+		if matched {
+			return result, err
 		}
 	}
 
@@ -399,6 +391,31 @@ func (d *Dnsfilter) CheckHost(host string, qtype uint16, setts *RequestFiltering
 	}
 
 	return Result{}, nil
+}
+
+func (d *Dnsfilter) checkAutoHosts(host string, qtype uint16, result *Result) (matched bool, err error) {
+	ips := d.Config.AutoHosts.Process(host, qtype)
+	if ips != nil {
+		result.Reason = RewriteEtcHosts
+		result.IPList = ips
+
+		return true, nil
+	}
+
+	revHosts := d.Config.AutoHosts.ProcessReverse(host, qtype)
+	if len(revHosts) != 0 {
+		result.Reason = RewriteEtcHosts
+
+		// TODO(a.garipov): Optimize this with a buffer.
+		result.ReverseHosts = make([]string, len(revHosts))
+		for i := range revHosts {
+			result.ReverseHosts[i] = revHosts[i] + "."
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // Process rewrites table
