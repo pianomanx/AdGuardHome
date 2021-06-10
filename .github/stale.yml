@@ -6,7 +6,10 @@
 'exemptLabels':
 - 'bug'
 - 'enhancement'
+- 'Feature Request'
+- 'Feature_Request'
 - 'feature request'
+- 'feature_request'
 - 'localization'
 - 'needs investigation'
 - 'recurrent'
